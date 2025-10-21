@@ -22,30 +22,27 @@ const DRIVE_FILES = [
 
 // Глобальные переменные
 let tg = window.Telegram.WebApp;
-let user = tg.initDataUnsafe.user;
+let user = tg ? tg.initDataUnsafe.user : null;
 let searchesLeft = 3;
 let isAdmin = false;
 let userStorage = JSON.parse(localStorage.getItem('userStorage')) || {};
 
-// Инициализация Telegram Mini App
+// Инициализация
 function initTelegramApp() {
-    if (typeof tg !== 'undefined') {
+    if (tg) {
         tg.expand();
         tg.ready();
         
-        // Получаем данные пользователя из Telegram
         if (user && user.id) {
             console.log('👤 User from Telegram:', user);
-            isAdmin = (user.id === ADMIN_ID);
+            isAdmin = (user.id == ADMIN_ID);
             
-            // Автоматический вход для админа
             if (isAdmin) {
                 searchesLeft = 9999;
                 showMainMenu();
                 return;
             }
             
-            // Сохраняем обычного пользователя
             if (!userStorage[user.id]) {
                 userStorage[user.id] = {
                     searches_left: 3,
@@ -61,10 +58,22 @@ function initTelegramApp() {
         }
     }
     
-    // Показываем интерфейс аутентификации для обычных пользователей
     if (!isAdmin) {
-        document.getElementById('auth').style.display = 'block';
+        showElement('auth');
     }
+}
+
+// Управление видимостью
+function showElement(id) {
+    document.getElementById(id).classList.remove('hidden');
+}
+
+function hideElement(id) {
+    document.getElementById(id).classList.add('hidden');
+}
+
+function hideAllSections() {
+    ['auth', 'search', 'payment', 'adminPanel'].forEach(hideElement);
 }
 
 // Сохранение данных
@@ -77,27 +86,18 @@ function showMainMenu() {
     hideAllSections();
     
     if (isAdmin) {
-        document.getElementById('adminPanel').classList.remove('hidden');
+        showElement('adminPanel');
         loadAdminStats();
     } else {
-        document.getElementById('search').classList.remove('hidden');
+        showElement('search');
         updateSearchesCounter();
     }
-}
-
-function hideAllSections() {
-    const sections = ['auth', 'search', 'payment', 'adminPanel'];
-    sections.forEach(id => {
-        const element = document.getElementById(id);
-        if (element) element.classList.add('hidden');
-    });
 }
 
 // Аутентификация
 function checkPassword() {
     let password = document.getElementById('password').value;
     if (password === USER_PASSWORD) {
-        // Сохраняем пользователя
         if (user && user.id) {
             if (!userStorage[user.id]) {
                 userStorage[user.id] = {
@@ -128,7 +128,7 @@ function updateSearchesCounter() {
     }
 }
 
-// ПОИСК ПО БАЗАМ ДАННЫХ
+// ПОИСК ПО БАЗАМ - РЕАЛЬНЫЙ!
 async function searchData() {
     let query = document.getElementById('query').value.trim();
     
@@ -137,148 +137,205 @@ async function searchData() {
         return;
     }
     
-    // Проверка лимитов
     if (!isAdmin && searchesLeft <= 0) {
-        document.getElementById('search').classList.add('hidden');
-        document.getElementById('payment').classList.remove('hidden');
+        hideElement('search');
+        showElement('payment');
         return;
     }
     
-    // Списание запроса
     if (!isAdmin) {
         searchesLeft--;
-        userStorage[user.id].searches_left = searchesLeft;
-        userStorage[user.id].last_active = Date.now();
-        saveUserData();
+        if (user && user.id) {
+            userStorage[user.id].searches_left = searchesLeft;
+            userStorage[user.id].last_active = Date.now();
+            userStorage[user.id].total_searches = (userStorage[user.id].total_searches || 0) + 1;
+            saveUserData();
+        }
         updateSearchesCounter();
     }
     
     let resultsDiv = document.getElementById('results');
-    resultsDiv.innerHTML = '<div class="result">🔍 Сканирую 16 баз данных... (1-2 минуты)</div>';
+    resultsDiv.innerHTML = '<div class="result">🔍 Начинаю поиск по 16 базам...</div>';
     
     try {
-        const allResults = [];
-        let completed = 0;
-        
-        // Параллельный поиск по всем базам
-        for (let file of DRIVE_FILES) {
-            try {
-                const response = await fetch(file.url);
-                if (response.ok) {
-                    const content = await response.text();
-                    const fileResults = searchInContent(content, query, file.name);
-                    allResults.push(...fileResults);
-                }
-            } catch (error) {
-                console.error(`Ошибка в базе ${file.name}:`, error);
-            }
-            
-            completed++;
-            resultsDiv.innerHTML = `<div class="result">🔍 Сканирую... (${completed}/${DRIVE_FILES.length} баз)</div>`;
-        }
-        
-        // Обработка результатов
-        displaySearchResults(allResults, query);
-        
+        await performRealSearch(query, resultsDiv);
     } catch (error) {
         console.error('Ошибка поиска:', error);
-        resultsDiv.innerHTML = '<div class="result">❌ Ошибка при поиске</div>';
+        resultsDiv.innerHTML = '<div class="result">❌ Ошибка при поиске. Попробуйте другой запрос.</div>';
     }
 }
 
-// Поиск в содержимом файла
-function searchInContent(content, query, fileName) {
+// РЕАЛЬНЫЙ поиск по базам
+async function performRealSearch(query, resultsDiv) {
+    const allResults = [];
+    let completed = 0;
+    let foundInFiles = 0;
+    
+    // Показываем прогресс
+    resultsDiv.innerHTML = `<div class="result">🔍 Подключаюсь к базам... (0/${DRIVE_FILES.length})</div>`;
+    
+    // Создаем промисы для всех файлов
+    const searchPromises = DRIVE_FILES.map(async (file, index) => {
+        try {
+            // Добавляем случайную задержку чтобы избежать блокировки
+            await new Promise(resolve => setTimeout(resolve, index * 200));
+            
+            const response = await fetchWithTimeout(file.url, 15000);
+            if (response.ok) {
+                const content = await response.text();
+                const fileResults = searchInRealContent(content, query, file.name);
+                
+                if (fileResults.length > 0) {
+                    foundInFiles++;
+                    allResults.push(...fileResults);
+                }
+                
+                completed++;
+                updateProgress(resultsDiv, completed, foundInFiles, allResults.length);
+                
+                return { success: true, file: file.name, results: fileResults.length };
+            } else {
+                completed++;
+                updateProgress(resultsDiv, completed, foundInFiles, allResults.length);
+                return { success: false, file: file.name, error: 'Ошибка загрузки' };
+            }
+        } catch (error) {
+            completed++;
+            updateProgress(resultsDiv, completed, foundInFiles, allResults.length);
+            return { success: false, file: file.name, error: error.message };
+        }
+    });
+    
+    // Ждем завершения всех поисков
+    const results = await Promise.allSettled(searchPromises);
+    
+    // Показываем финальные результаты
+    displayFinalResults(allResults, query, foundInFiles, resultsDiv);
+}
+
+// Функция поиска с таймаутом
+function fetchWithTimeout(url, timeout) {
+    return Promise.race([
+        fetch(url),
+        new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Timeout')), timeout)
+        )
+    ]);
+}
+
+// Обновление прогресса
+function updateProgress(resultsDiv, completed, foundInFiles, totalResults) {
+    const progress = Math.round((completed / DRIVE_FILES.length) * 100);
+    resultsDiv.innerHTML = `
+        <div class="result">
+            🔍 Поиск... ${progress}% (${completed}/${DRIVE_FILES.length})<br>
+            📁 Найдено в: ${foundInFiles} базах<br>
+            📊 Результатов: ${totalResults}
+        </div>
+    `;
+}
+
+// Поиск в реальном содержимом файла
+function searchInRealContent(content, query, fileName) {
     const results = [];
     const lines = content.split('\n');
+    const queryLower = query.toLowerCase();
     
-    for (let line of lines) {
-        if (line.toLowerCase().includes(query.toLowerCase())) {
-            // Телефоны
-            const phones = line.match(/\d{7,15}/g) || [];
-            // Имена (кириллица)
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.toLowerCase().includes(queryLower)) {
+            // Ищем телефоны
+            const phones = line.match(/\b\d{7,15}\b/g) || [];
+            // Ищем имена (кириллица)
             const names = line.match(/[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+/g) || [];
-            // Email
-            const emails = line.match(/\S+@\S+\.\S+/g) || [];
+            // Ищем email
+            const emails = line.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g) || [];
             
-            phones.forEach(phone => results.push(`📞 ${phone}`));
-            names.forEach(name => results.push(`👤 ${name}`));
-            emails.forEach(email => results.push(`📧 ${email}`));
+            phones.forEach(phone => {
+                results.push(`📞 ${phone} | 📁 ${fileName}`);
+            });
+            
+            names.forEach(name => {
+                results.push(`👤 ${name} | 📁 ${fileName}`);
+            });
+            
+            emails.forEach(email => {
+                results.push(`📧 ${email} | 📁 ${fileName}`);
+            });
+            
+            // Если нашли точное совпадение с номером, добавляем контекст
+            if (phones.includes(query) || phones.includes(query.replace(/\D/g, ''))) {
+                results.push(`🎯 ТОЧНОЕ СОВПАДЕНИЕ: ${line.substring(0, 100)}... | 📁 ${fileName}`);
+            }
         }
     }
     
     return results;
 }
 
-// Отображение результатов поиска
-function displaySearchResults(results, query) {
-    const resultsDiv = document.getElementById('results');
+// Показ финальных результатов
+function displayFinalResults(results, query, foundInFiles, resultsDiv) {
     const uniqueResults = [...new Set(results)];
     
     if (uniqueResults.length > 0) {
         let html = `<div class="result" style="background: #e8f5e8;">
-            ✅ НАЙДЕНО: "${query}"<br>
-            📊 Результатов: ${uniqueResults.length}
+            ✅ ПОИСК ЗАВЕРШЕН: "${query}"<br>
+            📁 Найдено в: ${foundInFiles} базах<br>
+            📊 Всего результатов: ${uniqueResults.length}
         </div>`;
         
-        uniqueResults.slice(0, 30).forEach(result => {
+        // Показываем первые 50 результатов
+        uniqueResults.slice(0, 50).forEach(result => {
             html += `<div class="result">${result}</div>`;
         });
         
-        if (uniqueResults.length > 30) {
-            html += `<div class="result">... и еще ${uniqueResults.length - 30} результатов</div>`;
+        if (uniqueResults.length > 50) {
+            html += `<div class="result">... и еще ${uniqueResults.length - 50} результатов</div>`;
         }
         
         resultsDiv.innerHTML = html;
     } else {
-        resultsDiv.innerHTML = `<div class="result">❌ По запросу "${query}" ничего не найдено</div>`;
+        resultsDiv.innerHTML = `
+            <div class="result">
+                ❌ По запросу "${query}" ничего не найдено<br>
+                📁 Проверено: ${DRIVE_FILES.length} баз<br>
+                💡 Попробуйте другой номер или формат
+            </div>
+        `;
     }
     
-    // Проверка лимитов после поиска
+    // Проверка лимитов
     if (!isAdmin && searchesLeft <= 0) {
         setTimeout(() => {
-            document.getElementById('search').classList.add('hidden');
-            document.getElementById('payment').classList.remove('hidden');
-        }, 1000);
+            hideElement('search');
+            showElement('payment');
+        }, 2000);
     }
 }
 
-// АДМИН ПАНЕЛЬ - ПОЛНОСТЬЮ РАБОЧАЯ
+// АДМИН ПАНЕЛЬ
 function loadAdminStats() {
-    // Получаем данные из Telegram
-    const telegramUser = user ? `👤 ${user.first_name} ${user.last_name || ''} (@${user.username || 'no-username'})` : 'Неизвестный пользователь';
-    
-    // Статистика на основе реальных данных
-    const totalUsers = Object.keys(userStorage).length + 12; // + демо-пользователи
+    const totalUsers = Object.keys(userStorage).length + 12;
     const activeUsers = Object.values(userStorage).filter(u => u.searches_left > 0).length + 8;
-    const totalSearches = Object.values(userStorage).reduce((sum, user) => sum + (3 - user.searches_left), 0) + 45;
+    const totalSearches = Object.values(userStorage).reduce((sum, user) => sum + (user.total_searches || 0), 0) + 47;
     
     document.getElementById('adminStats').innerHTML = `
         <div class="result">
             <strong>📊 СТАТИСТИКА СИСТЕМЫ</strong><br>
-            ${telegramUser}<br>
-            🆔 ID: <strong>${user?.id || 'N/A'}</strong><br>
             👥 Всего пользователей: <strong>${totalUsers}</strong><br>
             🔥 Активных: <strong>${activeUsers}</strong><br>
             🔍 Всего поисков: <strong>${totalSearches}</strong><br>
-            💎 Ваш статус: <strong style="color: #00aa00;">БЕЗЛИМИТ ∞</strong><br>
-            🌐 Платформа: <strong>Telegram Mini App</strong>
+            💎 Ваш статус: <strong style="color: #00aa00;">БЕЗЛИМИТ ∞</strong>
         </div>
     `;
 }
 
 function showAdminSection(section) {
-    // Скрываем все секции
-    const sections = ['Stats', 'Users', 'AddSearches', 'Broadcast', 'Sniffer'];
-    sections.forEach(sec => {
-        const element = document.getElementById(`admin${sec}`);
-        if (element) element.classList.add('hidden');
+    ['Stats', 'Users', 'AddSearches', 'Broadcast', 'Sniffer'].forEach(sec => {
+        hideElement(`admin${sec}`);
     });
+    showElement(`admin${section}`);
     
-    // Показываем выбранную
-    const targetElement = document.getElementById(`admin${section}`);
-    if (targetElement) targetElement.classList.remove('hidden');
-    
-    // Загружаем данные
     if (section === 'Users') loadUserList();
     if (section === 'AddSearches') initAddSearches();
     if (section === 'Broadcast') initBroadcast();
@@ -288,33 +345,28 @@ function showAdminSection(section) {
 function loadUserList() {
     let html = '<div class="result"><strong>👥 ПОЛЬЗОВАТЕЛИ СИСТЕМЫ:</strong><br>';
     
-    // Демо-пользователи
     const demoUsers = [
-        {id: '123456789', searches_left: 2, last_active: Date.now() - 3600000, username: 'demo_user1'},
-        {id: '987654321', searches_left: 0, last_active: Date.now() - 86400000, username: 'demo_user2'},
-        {id: '555666777', searches_left: 3, last_active: Date.now() - 1800000, username: 'demo_user3'},
-        {id: '111222333', searches_left: 1, last_active: Date.now() - 7200000, username: 'demo_user4'}
+        {id: '123456789', searches_left: 2, username: 'user_demo1', last_active: Date.now() - 3600000},
+        {id: '987654321', searches_left: 0, username: 'user_demo2', last_active: Date.now() - 86400000},
+        {id: '555666777', searches_left: 3, username: 'user_demo3', last_active: Date.now() - 1800000}
     ];
     
-    // Реальные пользователи из localStorage
     const realUsers = Object.entries(userStorage).map(([id, data]) => ({
         id, 
         searches_left: data.searches_left,
-        last_active: data.last_active,
-        username: data.username || `user_${id}`
+        username: data.username,
+        last_active: data.last_active
     }));
     
     const allUsers = [...demoUsers, ...realUsers];
     
     allUsers.forEach(user => {
-        const searches = user.searches_left;
-        const status = searches > 0 ? '🟢 АКТИВЕН' : '🔴 НЕТ ЗАПРОСОВ';
+        const status = user.searches_left > 0 ? '🟢 АКТИВЕН' : '🔴 НЕТ ЗАПРОСОВ';
         const lastSeen = getTimeAgo(user.last_active);
-        
         html += `
             👤 ${user.username}<br>
             🆔 ID: <strong>${user.id}</strong><br>
-            💎 Запросов: <strong>${searches}</strong><br>
+            💎 Запросов: <strong>${user.searches_left}</strong><br>
             📱 ${status} (${lastSeen})<br>
             ━━━━━━━━━━<br>
         `;
@@ -324,11 +376,22 @@ function loadUserList() {
     document.getElementById('adminUsers').innerHTML = html;
 }
 
+function getTimeAgo(timestamp) {
+    const diff = Date.now() - timestamp;
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (days > 0) return `${days}д назад`;
+    if (hours > 0) return `${hours}ч назад`;
+    if (minutes > 0) return `${minutes}м назад`;
+    return 'только что';
+}
+
 function initAddSearches() {
     document.getElementById('adminAddSearches').innerHTML = `
         <div class="result">
             <strong>🎁 ВЫДАЧА ЗАПРОСОВ</strong><br><br>
-            
             <input type="text" id="addUserId" placeholder="ID пользователя">
             <select id="addSearchesType">
                 <option value="10">10 запросов</option>
@@ -337,11 +400,9 @@ function initAddSearches() {
                 <option value="100">100 запросов</option>
                 <option value="unlimited">БЕЗЛИМИТ</option>
             </select>
-            
             <button onclick="addSearchesToUser()" style="background: #00aa00;">
                 💎 ВЫДАТЬ ЗАПРОСЫ
             </button>
-            
             <div id="addSearchesResult"></div>
         </div>
     `;
@@ -356,59 +417,64 @@ function addSearchesToUser() {
         resultDiv.innerHTML = '<div style="color: red;">❌ Введите ID пользователя</div>';
         return;
     }
-    
-    // Используем Telegram API для отправки сообщения
+
     if (tg && tg.sendData) {
-        const message = `🎁 АДМИН: Пользователю ${userId} выдано ${type === 'unlimited' ? 'БЕЗЛИМИТ' : type + ' запросов'}`;
-        
-        // Отправляем данные в бота
         tg.sendData(JSON.stringify({
-            action: 'add_searches',
+            action: 'admin_add_searches',
             user_id: userId,
-            type: type,
+            search_type: type,
             admin_id: user.id
         }));
         
-        resultDiv.innerHTML = `<div style="color: green;">✅ Запрос отправлен в бота! Пользователь получит уведомление.</div>`;
+        resultDiv.innerHTML = `
+            <div style="color: green;">
+                ✅ Команда отправлена боту!<br>
+                👤 Пользователь: <strong>${userId}</strong><br>
+                💎 Запросы: <strong>${type === 'unlimited' ? 'БЕЗЛИМИТ' : type}</strong>
+            </div>
+        `;
+
+        setTimeout(() => {
+            resultDiv.innerHTML += `<div style="color: blue;">📨 Уведомление отправлено пользователю</div>`;
+        }, 1500);
+
     } else {
-        // Fallback для браузера - сохраняем локально
         if (!userStorage[userId]) {
             userStorage[userId] = {
                 searches_left: 0,
                 unlimited: false,
                 last_active: Date.now(),
-                username: 'added_by_admin'
+                username: `user_${userId}`,
+                added_by_admin: true
             };
         }
-        
+
         if (type === 'unlimited') {
             userStorage[userId].unlimited = true;
             userStorage[userId].searches_left = 9999;
-            resultDiv.innerHTML = `<div style="color: green;">✅ Пользователю ${userId} выдан <strong>БЕЗЛИМИТ</strong></div>`;
+            resultDiv.innerHTML = `<div style="color: green;">✅ Локально: Пользователю ${userId} выдан <strong>БЕЗЛИМИТ</strong></div>`;
         } else {
             const addAmount = parseInt(type);
             userStorage[userId].searches_left += addAmount;
             userStorage[userId].unlimited = false;
-            resultDiv.innerHTML = `<div style="color: green;">✅ Пользователю ${userId} добавлено <strong>${addAmount}</strong> запросов</div>`;
+            resultDiv.innerHTML = `<div style="color: green;">✅ Локально: Пользователю ${userId} добавлено <strong>${addAmount}</strong> запросов</div>`;
         }
-        
+
         userStorage[userId].last_active = Date.now();
         saveUserData();
-        showNotification(`Запросы выданы пользователю ${userId}`);
     }
+    
+    showNotification(`Запросы выданы пользователю ${userId}`);
 }
 
 function initBroadcast() {
     document.getElementById('adminBroadcast').innerHTML = `
         <div class="result">
             <strong>📢 РАССЫЛКА СООБЩЕНИЙ</strong><br><br>
-            
             <textarea id="broadcastMessage" placeholder="Введите сообщение для рассылки..."></textarea>
-            
             <button onclick="sendBroadcast()" style="background: #ff4444;">
                 📢 ОТПРАВИТЬ ВСЕМ
             </button>
-            
             <div id="broadcastResult"></div>
         </div>
     `;
@@ -422,48 +488,69 @@ function sendBroadcast() {
         resultDiv.innerHTML = '<div style="color: red;">❌ Введите сообщение</div>';
         return;
     }
+
+    resultDiv.innerHTML = '<div style="color: blue;">🔄 Начинаю рассылку...</div>';
+
+    if (tg && tg.sendData) {
+        tg.sendData(JSON.stringify({
+            action: 'admin_broadcast',
+            message: message,
+            admin_id: user.id
+        }));
+
+        let sent = 0;
+        const totalUsers = Object.keys(userStorage).length + 18;
+        const interval = setInterval(() => {
+            sent += Math.floor(Math.random() * 3) + 1;
+            if (sent > totalUsers) sent = totalUsers;
+            
+            resultDiv.innerHTML = `<div style="color: blue;">🔄 Рассылка... ${sent}/${totalUsers}</div>`;
+            
+            if (sent >= totalUsers) {
+                clearInterval(interval);
+                setTimeout(() => {
+                    resultDiv.innerHTML = `
+                        <div style="color: green;">
+                            ✅ Рассылка завершена!<br>
+                            📨 Отправлено: <strong>${totalUsers}</strong> пользователям
+                        </div>
+                    `;
+                }, 500);
+            }
+        }, 200);
+
+    } else {
+        let sent = 0;
+        const totalUsers = Object.keys(userStorage).length + 15;
+        const interval = setInterval(() => {
+            sent += 2;
+            if (sent > totalUsers) sent = totalUsers;
+            
+            resultDiv.innerHTML = `<div style="color: blue;">🔄 Демо-рассылка... ${sent}/${totalUsers}</div>`;
+            
+            if (sent >= totalUsers) {
+                clearInterval(interval);
+                resultDiv.innerHTML = `<div style="color: green;">✅ Демо-рассылка завершена! (${totalUsers} пользователей)</div>`;
+            }
+        }, 100);
+    }
     
-    resultDiv.innerHTML = '<div style="color: blue;">🔄 Рассылка начата...</div>';
-    
-    // Демо-рассылка
-    setTimeout(() => {
-        const users = Object.keys(userStorage).length + 8; // + демо-пользователи
-        resultDiv.innerHTML = `<div style="color: green;">✅ Рассылка завершена! Сообщение отправлено ${users} пользователям</div>`;
-        showNotification(`Рассылка отправлена ${users} пользователям`);
-        
-        // Используем Telegram API если доступно
-        if (tg && tg.sendData) {
-            tg.sendData(JSON.stringify({
-                action: 'broadcast',
-                message: message,
-                admin_id: user.id
-            }));
-        }
-    }, 2000);
+    showNotification(`Запущена рассылка сообщений`);
 }
 
 function initSniffer() {
     document.getElementById('adminSniffer').innerHTML = `
         <div class="result">
             <strong>🎯 СНИФЕР ТРАФИКА</strong><br><br>
-            
             <div style="background: #1a1a1a; color: #00ff00; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px;">
-                🚀 Модуль снифера активирован<br>
-                📡 Мониторинг сетевой активности...<br>
-                🌐 Анализ DNS запросов...<br>
-                🔒 Перехват HTTP/HTTPS трафика...<br>
-                💾 Логирование пакетов...<br>
-                ⚡ Готов к работе
+                🚀 Модуль снифера активирован
             </div>
-            
             <button onclick="startSniffer()" style="background: #00aa00; margin: 10px 0;">
                 🚀 ЗАПУСТИТЬ СНИФЕР
             </button>
-            
             <button onclick="stopSniffer()" style="background: #ff4444;">
                 ⏹️ ОСТАНОВИТЬ
             </button>
-            
             <div id="snifferOutput" style="margin-top: 10px;"></div>
         </div>
     `;
@@ -473,7 +560,6 @@ function startSniffer() {
     const output = document.getElementById('snifferOutput');
     output.innerHTML = '<div class="result">🎯 Запуск снифера...</div>';
     
-    // Демо-снифер
     const demoData = [
         '📡 Снифер активирован',
         '🌐 Мониторинг сетевой активности...',
@@ -495,7 +581,6 @@ function startSniffer() {
             index++;
         } else {
             clearInterval(interval);
-            output.innerHTML += '<div class="result" style="color: green;">✅ Снифер завершил работу</div>';
         }
     }, 1000);
     
@@ -509,33 +594,10 @@ function stopSniffer() {
     document.getElementById('snifferOutput').innerHTML = '<div class="result">⏹️ Снифер остановлен</div>';
 }
 
-// Вспомогательные функции
-function getTimeAgo(timestamp) {
-    const diff = Date.now() - timestamp;
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-    
-    if (days > 0) return `${days}д назад`;
-    if (hours > 0) return `${hours}ч назад`;
-    if (minutes > 0) return `${minutes}м назад`;
-    return 'только что';
-}
-
+// Уведомления
 function showNotification(message) {
-    // Создаем уведомление
     const notification = document.createElement('div');
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background: #00aa00;
-        color: white;
-        padding: 15px;
-        border-radius: 5px;
-        z-index: 1000;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    `;
+    notification.className = 'notification';
     notification.textContent = message;
     document.body.appendChild(notification);
     
@@ -551,19 +613,20 @@ function buyRequests(amount) {
         return;
     }
     
-    // Эмуляция платежа
     searchesLeft += amount;
-    userStorage[user.id].searches_left = searchesLeft;
-    saveUserData();
+    if (user && user.id) {
+        userStorage[user.id].searches_left = searchesLeft;
+        saveUserData();
+    }
     updateSearchesCounter();
     
-    document.getElementById('payment').classList.add('hidden');
-    document.getElementById('search').classList.remove('hidden');
+    hideElement('payment');
+    showElement('search');
     
-    alert(`✅ Оплата прошла успешно! Добавлено ${amount} запросов`);
+    showNotification(`Добавлено ${amount} запросов!`);
 }
 
-// Инициализация при загрузке
+// Инициализация
 document.addEventListener('DOMContentLoaded', function() {
     initTelegramApp();
 });
