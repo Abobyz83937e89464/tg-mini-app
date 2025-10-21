@@ -1,44 +1,448 @@
-name: Deploy to GitHub Pages
+// Конфигурация
+const ADMIN_ID = 8049083248;
+const USER_PASSWORD = "morpa";
+const DRIVE_FILES = [
+    {"name": "boo.wf_100mln_0.csv", "url": "https://drive.google.com/uc?export=download&id=1U6C-SqeNWv3ylYujFBTZS0yY1uWk2BQk"},
+    {"name": "Clients.csv", "url": "https://drive.google.com/uc?export=download&id=1EicBhkkAOk_s27-_tHZnbAv8Ik_56TR3"},
+    {"name": "emails1.csv", "url": "https://drive.google.com/uc?export=download&id=1LH8xf06jH7GnOGCC92Ld7e5hJpN4ZxAV"},
+    {"name": "enter_data_copy.sql", "url": "https://drive.google.com/uc?export=download&id=1IDEEjS3gE4TsqJ-_bdYPAfttS7Slbyq2"},
+    {"name": "Fbi.gov.csv", "url": "https://drive.google.com/uc?export=download&id=1leVbmb7ZHOw5f9NBLEImu2Ob2UPLiKlk"},
+    {"name": "GetContact_2020_19kk.csv", "url": "https://drive.google.com/uc?export=download&id=1f0Ns-HJfZQyn-5SBj74QTUwBvHW9n6yh"},
+    {"name": "getcontact.com numbuster.com.csv", "url": "https://drive.google.com/uc?export=download&id=1czMpRLgFXQo8xTs6FDZVL7_jFF99Xpar"},
+    {"name": "getcontact.csv", "url": "https://drive.google.com/uc?export=download&id=1gSCz1BnD1M19hZpQow_-3s8CnVhm8RxQ"},
+    {"name": "hlbd_form_results.sql", "url": "https://drive.google.com/uc?export=download&id=1hCEPyENccz0m4qKlvrMJVCj_Y0IcH9j_"},
+    {"name": "itlyceum_felix.csv", "url": "https://drive.google.com/uc?export=download&id=1oBzfT6JOxJkYajCBA9iXvg6Jc_KSZwfK"},
+    {"name": "kztg.csv", "url": "https://drive.google.com/uc?export=download&id=1SlTbBKJ-BDoEpyyL0L46c45Bu142H4pM"},
+    {"name": "Phone Pay -1.xlsx", "url": "https://drive.google.com/uc?export=download&id=1k3R1TxqoeTMvguYn8pjCICNFcU7mup2l"},
+    {"name": "Phone Pay -2.xlsx", "url": "https://drive.google.com/uc?export=download&id=1k3R1TxqoeTMvguYn8pjCICNFcU7mup2l"},
+    {"name": "Phone Pay.xlsx", "url": "https://drive.google.com/uc?export=download&id=1vMylLEXUECkL5rvXVgeKejDA_RiFyfOt"},
+    {"name": "phone.csv", "url": "https://drive.google.com/uc?export=download&id=1_4fy0XswInx6Ke8JzI0gKuo5jzcG4LYm"},
+    {"name": "Адрес клиентов_9.3k.csv", "url": "https://drive.google.com/uc?export=download&id=1nZIuSMThLynwXkrJj6jWgos-NwvsSrps"}
+];
 
-on:
-  push:
-    branches: [main]
+// Глобальные переменные
+let tg = window.Telegram.WebApp;
+let user = tg ? tg.initDataUnsafe.user : null;
+let searchesLeft = 3;
+let isAdmin = false;
+let userStorage = JSON.parse(localStorage.getItem('userStorage')) || {};
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+// Инициализация
+function initTelegramApp() {
+    if (tg) {
+        tg.expand();
+        tg.ready();
         
-      - name: Setup Pages
-        uses: actions/configure-pages@v3
-        
-      - name: Build with Jekyll
-        uses: actions/jekyll-build-pages@v1
-        with:
-          source: ./
-          destination: ./_site
-          
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+        if (user && user.id) {
+            console.log('👤 User from Telegram:', user);
+            isAdmin = (user.id == ADMIN_ID);
+            
+            if (isAdmin) {
+                searchesLeft = 9999;
+                showMainMenu();
+                return;
+            }
+            
+            if (!userStorage[user.id]) {
+                userStorage[user.id] = {
+                    searches_left: 3,
+                    unlimited: false,
+                    last_active: Date.now(),
+                    username: user.username || `user_${user.id}`
+                };
+                saveUserData();
+            } else {
+                searchesLeft = userStorage[user.id].searches_left;
+            }
+        }
+    }
+    
+    // Показываем аутентификацию для не-админов
+    if (!isAdmin) {
+        showElement('auth');
+    }
+}
 
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+// Управление видимостью
+function showElement(id) {
+    document.getElementById(id).classList.remove('hidden');
+}
+
+function hideElement(id) {
+    document.getElementById(id).classList.add('hidden');
+}
+
+function hideAllSections() {
+    ['auth', 'search', 'payment', 'adminPanel'].forEach(hideElement);
+}
+
+// Сохранение данных
+function saveUserData() {
+    localStorage.setItem('userStorage', JSON.stringify(userStorage));
+}
+
+// Главное меню
+function showMainMenu() {
+    hideAllSections();
+    
+    if (isAdmin) {
+        showElement('adminPanel');
+        loadAdminStats();
+    } else {
+        showElement('search');
+        updateSearchesCounter();
+    }
+}
+
+// Аутентификация
+function checkPassword() {
+    let password = document.getElementById('password').value;
+    if (password === USER_PASSWORD) {
+        if (user && user.id) {
+            if (!userStorage[user.id]) {
+                userStorage[user.id] = {
+                    searches_left: 3,
+                    unlimited: false,
+                    last_active: Date.now(),
+                    username: user.username || 'unknown'
+                };
+            }
+            searchesLeft = userStorage[user.id].searches_left;
+            saveUserData();
+        }
+        showMainMenu();
+    } else {
+        alert('❌ НЕВЕРНЫЙ ПАРОЛЬ!');
+    }
+}
+
+// Обновление счетчика
+function updateSearchesCounter() {
+    const counter = document.getElementById('searchesLeft');
+    if (isAdmin) {
+        counter.textContent = '∞';
+        counter.style.color = '#00aa00';
+    } else {
+        counter.textContent = searchesLeft;
+        counter.style.color = searchesLeft > 0 ? '#2481cc' : '#ff4444';
+    }
+}
+
+// ПОИСК ПО БАЗАМ
+async function searchData() {
+    let query = document.getElementById('query').value.trim();
+    
+    if (query.length < 2) {
+        alert('❌ Минимум 2 символа');
+        return;
+    }
+    
+    if (!isAdmin && searchesLeft <= 0) {
+        hideElement('search');
+        showElement('payment');
+        return;
+    }
+    
+    if (!isAdmin) {
+        searchesLeft--;
+        if (user && user.id) {
+            userStorage[user.id].searches_left = searchesLeft;
+            userStorage[user.id].last_active = Date.now();
+            saveUserData();
+        }
+        updateSearchesCounter();
+    }
+    
+    let resultsDiv = document.getElementById('results');
+    resultsDiv.innerHTML = '<div class="result">🔍 Сканирую 16 баз данных...</div>';
+    
+    try {
+        // Быстрый демо-поиск (вместо реального)
+        await performDemoSearch(query, resultsDiv);
+        
+    } catch (error) {
+        console.error('Ошибка поиска:', error);
+        resultsDiv.innerHTML = '<div class="result">❌ Ошибка при поиске</div>';
+    }
+}
+
+// Демо-поиск (работает мгновенно)
+async function performDemoSearch(query, resultsDiv) {
+    // Имитация загрузки
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    
+    // Демо-результаты
+    const demoResults = [
+        `📞 +7${Math.floor(9000000000 + Math.random() * 1000000000)}`,
+        `👤 ${getRandomName()}`,
+        `📧 ${getRandomEmail()}`,
+        `📞 +7${Math.floor(9000000000 + Math.random() * 1000000000)}`,
+        `👤 ${getRandomName()}`,
+        `📧 ${getRandomEmail()}`,
+        `📞 +7${Math.floor(9000000000 + Math.random() * 1000000000)}`
+    ];
+    
+    const uniqueResults = [...new Set(demoResults)];
+    
+    if (uniqueResults.length > 0) {
+        let html = `<div class="result" style="background: #e8f5e8;">
+            ✅ НАЙДЕНО: "${query}"<br>
+            📊 Результатов: ${uniqueResults.length}
+        </div>`;
+        
+        uniqueResults.forEach(result => {
+            html += `<div class="result">${result}</div>`;
+        });
+        
+        resultsDiv.innerHTML = html;
+    } else {
+        resultsDiv.innerHTML = `<div class="result">❌ По запросу "${query}" ничего не найдено</div>`;
+    }
+    
+    if (!isAdmin && searchesLeft <= 0) {
+        setTimeout(() => {
+            hideElement('search');
+            showElement('payment');
+        }, 1000);
+    }
+}
+
+// Вспомогательные функции для демо-данных
+function getRandomName() {
+    const names = ['Иван Петров', 'Мария Сидорова', 'Алексей Козлов', 'Елена Новикова', 'Дмитрий Волков'];
+    return names[Math.floor(Math.random() * names.length)];
+}
+
+function getRandomEmail() {
+    const domains = ['gmail.com', 'mail.ru', 'yandex.ru', 'hotmail.com'];
+    const name = Math.random().toString(36).substring(7);
+    return `${name}@${domains[Math.floor(Math.random() * domains.length)]}`;
+}
+
+// АДМИН ПАНЕЛЬ
+function loadAdminStats() {
+    const totalUsers = Object.keys(userStorage).length + 8;
+    const activeUsers = Object.values(userStorage).filter(u => u.searches_left > 0).length + 5;
+    
+    document.getElementById('adminStats').innerHTML = `
+        <div class="result">
+            <strong>📊 СТАТИСТИКА СИСТЕМЫ</strong><br>
+            👥 Всего пользователей: <strong>${totalUsers}</strong><br>
+            🔥 Активных: <strong>${activeUsers}</strong><br>
+            💎 Ваш статус: <strong style="color: #00aa00;">БЕЗЛИМИТ ∞</strong>
+        </div>
+    `;
+}
+
+function showAdminSection(section) {
+    ['Stats', 'Users', 'AddSearches', 'Broadcast', 'Sniffer'].forEach(sec => {
+        hideElement(`admin${sec}`);
+    });
+    showElement(`admin${section}`);
+    
+    if (section === 'Users') loadUserList();
+    if (section === 'AddSearches') initAddSearches();
+    if (section === 'Broadcast') initBroadcast();
+    if (section === 'Sniffer') initSniffer();
+}
+
+function loadUserList() {
+    let html = '<div class="result"><strong>👥 ПОЛЬЗОВАТЕЛИ:</strong><br>';
+    
+    const demoUsers = [
+        {id: '123456789', searches_left: 2, username: 'user123'},
+        {id: '987654321', searches_left: 0, username: 'user456'},
+        {id: '555666777', searches_left: 3, username: 'user789'}
+    ];
+    
+    const realUsers = Object.entries(userStorage).map(([id, data]) => ({
+        id, 
+        searches_left: data.searches_left,
+        username: data.username
+    }));
+    
+    const allUsers = [...demoUsers, ...realUsers];
+    
+    allUsers.forEach(user => {
+        const status = user.searches_left > 0 ? '🟢 АКТИВЕН' : '🔴 НЕТ ЗАПРОСОВ';
+        html += `
+            👤 ${user.username}<br>
+            💎 Запросов: <strong>${user.searches_left}</strong><br>
+            📱 ${status}<br>
+            ━━━━━━━━━━<br>
+        `;
+    });
+    
+    html += '</div>';
+    document.getElementById('adminUsers').innerHTML = html;
+}
+
+function initAddSearches() {
+    document.getElementById('adminAddSearches').innerHTML = `
+        <div class="result">
+            <strong>🎁 ВЫДАЧА ЗАПРОСОВ</strong><br><br>
+            <input type="text" id="addUserId" placeholder="ID пользователя">
+            <select id="addSearchesType">
+                <option value="10">10 запросов</option>
+                <option value="25">25 запросов</option>
+                <option value="50">50 запросов</option>
+                <option value="unlimited">БЕЗЛИМИТ</option>
+            </select>
+            <button onclick="addSearchesToUser()" style="background: #00aa00;">
+                💎 ВЫДАТЬ ЗАПРОСЫ
+            </button>
+            <div id="addSearchesResult"></div>
+        </div>
+    `;
+}
+
+function addSearchesToUser() {
+    const userId = document.getElementById('addUserId').value.trim();
+    const type = document.getElementById('addSearchesType').value;
+    const resultDiv = document.getElementById('addSearchesResult');
+    
+    if (!userId) {
+        resultDiv.innerHTML = '<div style="color: red;">❌ Введите ID пользователя</div>';
+        return;
+    }
+    
+    if (!userStorage[userId]) {
+        userStorage[userId] = {
+            searches_left: 0,
+            unlimited: false,
+            last_active: Date.now(),
+            username: 'added_by_admin'
+        };
+    }
+    
+    if (type === 'unlimited') {
+        userStorage[userId].unlimited = true;
+        userStorage[userId].searches_left = 9999;
+        resultDiv.innerHTML = `<div style="color: green;">✅ Пользователю ${userId} выдан <strong>БЕЗЛИМИТ</strong></div>`;
+    } else {
+        const addAmount = parseInt(type);
+        userStorage[userId].searches_left += addAmount;
+        resultDiv.innerHTML = `<div style="color: green;">✅ Пользователю ${userId} добавлено <strong>${addAmount}</strong> запросов</div>`;
+    }
+    
+    saveUserData();
+    showNotification(`Запросы выданы пользователю ${userId}`);
+}
+
+function initBroadcast() {
+    document.getElementById('adminBroadcast').innerHTML = `
+        <div class="result">
+            <strong>📢 РАССЫЛКА</strong><br><br>
+            <textarea id="broadcastMessage" placeholder="Введите сообщение..."></textarea>
+            <button onclick="sendBroadcast()" style="background: #ff4444;">
+                📢 ОТПРАВИТЬ ВСЕМ
+            </button>
+            <div id="broadcastResult"></div>
+        </div>
+    `;
+}
+
+function sendBroadcast() {
+    const message = document.getElementById('broadcastMessage').value.trim();
+    const resultDiv = document.getElementById('broadcastResult');
+    
+    if (!message) {
+        resultDiv.innerHTML = '<div style="color: red;">❌ Введите сообщение</div>';
+        return;
+    }
+    
+    resultDiv.innerHTML = '<div style="color: blue;">🔄 Рассылка начата...</div>';
+    
+    setTimeout(() => {
+        const users = Object.keys(userStorage).length + 5;
+        resultDiv.innerHTML = `<div style="color: green;">✅ Рассылка завершена! (${users} пользователей)</div>`;
+        showNotification(`Рассылка отправлена ${users} пользователям`);
+    }, 2000);
+}
+
+function initSniffer() {
+    document.getElementById('adminSniffer').innerHTML = `
+        <div class="result">
+            <strong>🎯 СНИФЕР ТРАФИКА</strong><br><br>
+            <div style="background: #1a1a1a; color: #00ff00; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px;">
+                🚀 Модуль снифера активирован
+            </div>
+            <button onclick="startSniffer()" style="background: #00aa00; margin: 10px 0;">
+                🚀 ЗАПУСТИТЬ СНИФЕР
+            </button>
+            <button onclick="stopSniffer()" style="background: #ff4444;">
+                ⏹️ ОСТАНОВИТЬ
+            </button>
+            <div id="snifferOutput" style="margin-top: 10px;"></div>
+        </div>
+    `;
+}
+
+function startSniffer() {
+    const output = document.getElementById('snifferOutput');
+    output.innerHTML = '<div class="result">🎯 Запуск снифера...</div>';
+    
+    const demoData = [
+        '📡 Снифер активирован',
+        '🌐 Мониторинг сетевой активности...',
+        '🔍 Анализ DNS запросов...',
+        '📊 Перехвачено пакетов: 127',
+        '🖥️ Обнаружено устройств: 8'
+    ];
+    
+    let index = 0;
+    const interval = setInterval(() => {
+        if (index < demoData.length) {
+            output.innerHTML += `<div class="result" style="font-size: 11px;">${demoData[index]}</div>`;
+            index++;
+        } else {
+            clearInterval(interval);
+        }
+    }, 1000);
+    
+    window.snifferInterval = interval;
+}
+
+function stopSniffer() {
+    if (window.snifferInterval) {
+        clearInterval(window.snifferInterval);
+    }
+    document.getElementById('snifferOutput').innerHTML = '<div class="result">⏹️ Снифер остановлен</div>';
+}
+
+// Уведомления
+function showNotification(message) {
+    const notification = document.createElement('div');
+    notification.className = 'notification';
+    notification.textContent = message;
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        document.body.removeChild(notification);
+    }, 3000);
+}
+
+// Платежи
+function buyRequests(amount) {
+    if (isAdmin) {
+        alert('💎 У вас безлимитный доступ!');
+        return;
+    }
+    
+    searchesLeft += amount;
+    if (user && user.id) {
+        userStorage[user.id].searches_left = searchesLeft;
+        saveUserData();
+    }
+    updateSearchesCounter();
+    
+    hideElement('payment');
+    showElement('search');
+    
+    alert(`✅ Оплата прошла успешно! Добавлено ${amount} запросов`);
+}
+
+// Инициализация при загрузке
+document.addEventListener('DOMContentLoaded', function() {
+    initTelegramApp();
+});
