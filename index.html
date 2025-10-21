@@ -68,7 +68,18 @@
             font-size: 12px;
         }
         .hidden {
-            display: none;
+            display: none !important;
+        }
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #00aa00;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
         }
     </style>
 </head>
@@ -112,11 +123,11 @@
         </div>
         
         <div class="admin-nav">
-            <button onclick="showAdminSection('stats')">📊 Статы</button>
-            <button onclick="showAdminSection('users')">👥 Юзеры</button>
-            <button onclick="showAdminSection('addSearches')">🎁 Запросы</button>
-            <button onclick="showAdminSection('broadcast')">📢 Рассылка</button>
-            <button onclick="showAdminSection('sniffer')">🎯 Снифер</button>
+            <button onclick="showAdminSection('Stats')">📊 Статы</button>
+            <button onclick="showAdminSection('Users')">👥 Юзеры</button>
+            <button onclick="showAdminSection('AddSearches')">🎁 Запросы</button>
+            <button onclick="showAdminSection('Broadcast')">📢 Рассылка</button>
+            <button onclick="showAdminSection('Sniffer')">🎯 Снифер</button>
         </div>
         
         <!-- Секции админ-панели -->
@@ -126,7 +137,7 @@
         <div id="adminBroadcast" class="hidden"></div>
         <div id="adminSniffer" class="hidden"></div>
         
-        <button onclick="showMainMenu()" style="background: #666;">
+        <button onclick="showMainMenu()" style="background: #666; margin-top: 10px;">
             🔙 В главное меню
         </button>
     </div>
