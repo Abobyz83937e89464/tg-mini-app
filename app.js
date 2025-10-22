@@ -83,15 +83,17 @@ function initTelegramApp() {
 
 // Управление видимостью
 function showElement(id) {
-    document.getElementById(id).classList.remove('hidden');
+    const element = document.getElementById(id);
+    if (element) element.classList.remove('hidden');
 }
 
 function hideElement(id) {
-    document.getElementById(id).classList.add('hidden');
+    const element = document.getElementById(id);
+    if (element) element.classList.add('hidden');
 }
 
 function hideAllSections() {
-    ['auth', 'search', 'payment', 'adminPanel'].forEach(hideElement);
+    ['auth', 'mainMenu', 'search', 'payment', 'adminPanel', 'snoserAuth', 'snoserMenu'].forEach(hideElement);
 }
 
 // Сохранение данных
@@ -107,8 +109,7 @@ function showMainMenu() {
         showElement('adminPanel');
         loadAdminStats();
     } else {
-        showElement('search');
-        updateSearchesCounter();
+        showElement('mainMenu');
     }
 }
 
@@ -151,7 +152,7 @@ function updateSearchesCounter() {
     }
 }
 
-// УЛУЧШЕННЫЙ ПОИСК - ВОЗВРАЩАЕМ ИМЕНА И EMAIL
+// ПОИСК ПО БАЗАМ - УЛУЧШЕННЫЙ ПОИСК - ВОЗВРАЩАЕМ ИМЕНА И EMAIL
 async function searchData() {
     let query = document.getElementById('query').value.trim();
     
@@ -708,6 +709,105 @@ function exportUserData() {
     URL.revokeObjectURL(url);
     
     showNotification('Данные пользователей экспортированы!');
+}
+
+// ==================== СНОСЕР TELEGRAM ====================
+
+function showSearch() {
+    hideAllSections();
+    showElement('search');
+    updateSearchesCounter();
+}
+
+function showSnoserAuth() {
+    hideAllSections();
+    showElement('snoserAuth');
+}
+
+function checkSnoserAccess() {
+    const tariffType = document.getElementById('tariffType').value;
+    const password = document.getElementById('snoserPassword').value;
+    
+    if (!password) {
+        alert('❌ Введите пароль');
+        return;
+    }
+    
+    // Отправляем запрос на проверку доступа
+    if (tg && tg.sendData) {
+        tg.sendData(JSON.stringify({
+            action: 'check_snoser_access',
+            tariff_type: tariffType,
+            password: password,
+            user_id: user?.id
+        }));
+        
+        // Временно показываем успех для теста
+        showSnoserMenu(tariffType);
+    } else {
+        alert('❌ Ошибка WebApp');
+    }
+}
+
+function showSnoserMenu(tariffType) {
+    hideAllSections();
+    showElement('snoserMenu');
+    
+    const infoDiv = document.getElementById('snoserTariffInfo');
+    const complaintSelect = document.getElementById('complaintType');
+    
+    if (tariffType === 'basic') {
+        infoDiv.innerHTML = '💎 ТАРИФ: <strong>БАЗОВЫЙ</strong><br>📧 Почты: <strong>5</strong><br>🚀 Жалоб: <strong>15</strong>';
+        // Базовый тариф - только 3 типа жалоб
+        complaintSelect.innerHTML = `
+            <option value="spam">Спам</option>
+            <option value="abuse">Оскорбления</option>
+            <option value="illegal">Запрещенный контент</option>
+        `;
+    } else {
+        infoDiv.innerHTML = '💎 ТАРИФ: <strong>VIP</strong><br>📧 Почты: <strong>16</strong><br>🚀 Жалоб: <strong>48</strong>';
+        // VIP тариф - все типы жалоб
+        complaintSelect.innerHTML = `
+            <option value="spam">Спам</option>
+            <option value="abuse">Оскорбления</option>
+            <option value="illegal">Запрещенный контент</option>
+            <option value="child_abuse">Детский контент</option>
+            <option value="terrorism">Терроризм</option>
+        `;
+    }
+}
+
+function startSnoser() {
+    const username = document.getElementById('targetUsername').value.trim();
+    const userId = document.getElementById('targetUserId').value.trim();
+    const complaintType = document.getElementById('complaintType').value;
+    const violationLink = document.getElementById('violationLink').value.trim();
+    const tariffType = document.getElementById('tariffType').value;
+    
+    if (!username || !userId) {
+        alert('❌ Заполните все поля');
+        return;
+    }
+    
+    const resultsDiv = document.getElementById('snoserResults');
+    resultsDiv.innerHTML = '<div class="result">🔄 Запускаю снос...</div>';
+    
+    // Отправляем команду боту
+    if (tg && tg.sendData) {
+        tg.sendData(JSON.stringify({
+            action: 'start_snoser',
+            target_username: username,
+            target_user_id: userId,
+            complaint_type: complaintType,
+            violation_link: violationLink,
+            tariff_type: tariffType,
+            user_id: user?.id
+        }));
+        
+        resultsDiv.innerHTML = '<div class="result">✅ Команда отправлена боту!</div>';
+    } else {
+        resultsDiv.innerHTML = '<div class="result">❌ Ошибка WebApp</div>';
+    }
 }
 
 // Уведомления
