@@ -92,6 +92,17 @@
         <button onclick="checkPassword()">🔓 Войти в систему</button>
     </div>
 
+    <!-- Основное меню выбора -->
+    <div id="mainMenu" class="container hidden">
+        <h2>🎯 СИСТЕМА ПОИСКА</h2>
+        <button onclick="showSearch()" style="background: #2481cc; margin: 10px 0;">
+            🔍 ПОИСК ПО БАЗАМ
+        </button>
+        <button onclick="showSnoserAuth()" style="background: #ff4444; margin: 10px 0;">
+            ⚡ СНОСЕР ТГ
+        </button>
+    </div>
+
     <!-- Основной поиск -->
     <div id="search" class="container hidden">
         <h2>🔍 Поиск по базам</h2>
@@ -112,6 +123,54 @@
             <button onclick="buyRequests(50)">50 запросов - 400₽</button>
             <button onclick="buyRequests(9999)">БЕЗЛИМИТ - 1000₽</button>
         </div>
+    </div>
+
+    <!-- Аутентификация в сносер -->
+    <div id="snoserAuth" class="container hidden">
+        <h2>⚡ СНОСЕР TELEGRAM</h2>
+        <p>Выберите тариф и введите пароль:</p>
+        
+        <select id="tariffType">
+            <option value="basic">Базовый (5 почт)</option>
+            <option value="vip">VIP (16 почт)</option>
+        </select>
+        
+        <input type="password" id="snoserPassword" placeholder="Пароль доступа">
+        
+        <button onclick="checkSnoserAccess()" style="background: #ff4444;">
+            🔓 ДОСТУП К СНОСЕРУ
+        </button>
+        
+        <button onclick="showMainMenu()" style="background: #666; margin-top: 10px;">
+            🔙 НАЗАД
+        </button>
+    </div>
+
+    <!-- Меню сносера -->
+    <div id="snoserMenu" class="container hidden">
+        <h2>⚡ СНОСЕР TELEGRAM</h2>
+        <div class="result" id="snoserTariffInfo"></div>
+        
+        <input type="text" id="targetUsername" placeholder="Юзернейм цели (без @)">
+        <input type="text" id="targetUserId" placeholder="ID цели">
+        
+        <select id="complaintType">
+            <option value="spam">Спам</option>
+            <option value="abuse">Оскорбления</option>
+            <option value="illegal">Запрещенный контент</option>
+        </select>
+        
+        <input type="text" id="violationLink" placeholder="Ссылка на нарушение (опционально)">
+        
+        <button onclick="startSnoser()" style="background: #ff4444;">
+            🚀 ЗАПУСТИТЬ СНОС
+        </button>
+        
+        <div id="snoserResults" style="margin-top: 10px;"></div>
+        
+        <button onclick="showMainMenu()" style="background: #666; margin-top: 10px;">
+            🔙 В ГЛАВНОЕ МЕНЮ
+        </button>
     </div>
 
     <!-- Админ панель -->
