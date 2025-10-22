@@ -151,7 +151,7 @@ function updateSearchesCounter() {
     }
 }
 
-// УЛУЧШЕННЫЙ ПОИСК - ОГРАНИЧЕННЫЕ РЕЗУЛЬТАТЫ
+// УЛУЧШЕННЫЙ ПОИСК - ВОЗВРАЩАЕМ ИМЕНА И EMAIL
 async function searchData() {
     let query = document.getElementById('query').value.trim();
     
@@ -198,7 +198,7 @@ async function searchData() {
     }
 }
 
-// УМНЫЙ ПОИСК - ОГРАНИЧЕННЫЕ РЕЗУЛЬТАТЫ
+// УМНЫЙ ПОИСК - ВОЗВРАЩАЕМ ВСЕ ДАННЫЕ
 async function performSmartSearch(query, resultsDiv) {
     const allResults = [];
     let completed = 0;
@@ -249,7 +249,7 @@ async function performSmartSearch(query, resultsDiv) {
     displaySmartResults(allResults, query, foundInFiles, errors, resultsDiv);
 }
 
-// ОПТИМИЗИРОВАННЫЙ поиск в содержимом - ОГРАНИЧЕННЫЕ РЕЗУЛЬТАТЫ
+// ОПТИМИЗИРОВАННЫЙ поиск - ВОЗВРАЩАЕМ ИМЕНА И EMAIL ПРИ ПОИСКЕ ПО НОМЕРУ
 function searchInContentOptimized(content, query, fileName, isPhone, isEmail, isName) {
     const results = [];
     const lines = content.split('\n');
@@ -257,11 +257,11 @@ function searchInContentOptimized(content, query, fileName, isPhone, isEmail, is
     const normalizedQuery = query.replace(/\D/g, '');
     
     let linesChecked = 0;
-    const maxLines = 10000; // УМЕНЬШЕНО с 50000
-    const maxResultsPerFile = 50; // ЛИМИТ результатов на файл
+    const maxLines = 10000;
+    const maxResultsPerFile = 100;
 
     for (let i = 0; i < Math.min(lines.length, maxLines); i++) {
-        if (results.length >= maxResultsPerFile) break; // ОСТАНАВЛИВАЕМ при достижении лимита
+        if (results.length >= maxResultsPerFile) break;
         
         const line = lines[i];
         linesChecked++;
@@ -270,28 +270,50 @@ function searchInContentOptimized(content, query, fileName, isPhone, isEmail, is
         
         const lineLower = line.toLowerCase();
         
-        // УМНЫЙ поиск с лимитами
+        // ЕСЛИ ПОИСК ПО НОМЕРУ - ИЩЕМ ВСЕ ДАННЫЕ В СТРОКЕ
         if (isPhone && line.includes(normalizedQuery)) {
+            // Находим все данные в строке где есть номер
             const phones = line.match(/\b\d{7,15}\b/g) || [];
+            const names = line.match(/[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+/g) || [];
+            const emails = line.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g) || [];
+            
+            // Добавляем все найденные данные
             phones.forEach(phone => {
                 if (phone.includes(normalizedQuery) && results.length < maxResultsPerFile) {
-                    results.push(`📞 ${phone} | ${fileName}`);
+                    let resultLine = `📞 ${phone}`;
+                    // Добавляем имя если есть
+                    if (names.length > 0) resultLine += ` | 👤 ${names[0]}`;
+                    // Добавляем email если есть
+                    if (emails.length > 0) resultLine += ` | 📧 ${emails[0]}`;
+                    results.push(resultLine);
                 }
             });
         } 
         else if (isEmail && lineLower.includes(queryLower)) {
             const emails = line.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g) || [];
+            const names = line.match(/[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+/g) || [];
+            const phones = line.match(/\b\d{7,15}\b/g) || [];
+            
             emails.forEach(email => {
                 if (email.toLowerCase().includes(queryLower) && results.length < maxResultsPerFile) {
-                    results.push(`📧 ${email} | ${fileName}`);
+                    let resultLine = `📧 ${email}`;
+                    if (names.length > 0) resultLine += ` | 👤 ${names[0]}`;
+                    if (phones.length > 0) resultLine += ` | 📞 ${phones[0]}`;
+                    results.push(resultLine);
                 }
             });
         }
         else if (isName && lineLower.includes(queryLower)) {
             const names = line.match(/[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+/g) || [];
+            const phones = line.match(/\b\d{7,15}\b/g) || [];
+            const emails = line.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g) || [];
+            
             names.forEach(name => {
                 if (name.toLowerCase().includes(queryLower) && results.length < maxResultsPerFile) {
-                    results.push(`👤 ${name} | ${fileName}`);
+                    let resultLine = `👤 ${name}`;
+                    if (phones.length > 0) resultLine += ` | 📞 ${phones[0]}`;
+                    if (emails.length > 0) resultLine += ` | 📧 ${emails[0]}`;
+                    results.push(resultLine);
                 }
             });
         }
@@ -301,15 +323,17 @@ function searchInContentOptimized(content, query, fileName, isPhone, isEmail, is
             const names = line.match(/[А-ЯЁ][а-яё]+\s+[А-ЯЁ][а-яё]+/g) || [];
             const emails = line.match(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g) || [];
             
-            phones.forEach(phone => {
-                if (results.length < maxResultsPerFile) results.push(`📞 ${phone} | ${fileName}`);
-            });
-            names.forEach(name => {
-                if (results.length < maxResultsPerFile) results.push(`👤 ${name} | ${fileName}`);
-            });
-            emails.forEach(email => {
-                if (results.length < maxResultsPerFile) results.push(`📧 ${email} | ${fileName}`);
-            });
+            // Собираем все данные в одной строке
+            if (phones.length > 0 || names.length > 0 || emails.length > 0) {
+                let resultLine = '';
+                if (phones.length > 0) resultLine += `📞 ${phones[0]} `;
+                if (names.length > 0) resultLine += `| 👤 ${names[0]} `;
+                if (emails.length > 0) resultLine += `| 📧 ${emails[0]}`;
+                
+                if (resultLine.trim() && results.length < maxResultsPerFile) {
+                    results.push(resultLine.trim());
+                }
+            }
         }
     }
     
@@ -340,16 +364,11 @@ function updateProgress(resultsDiv, completed, foundInFiles, totalResults, error
     `;
 }
 
-// УМНЫЙ показ результатов - БЕЗ ДЕМО ДАННЫХ
+// УМНЫЙ показ результатов - БЕЗ НАЗВАНИЙ ФАЙЛОВ
 function displaySmartResults(results, query, foundInFiles, errors, resultsDiv) {
     const uniqueResults = [...new Set(results)];
     
     if (uniqueResults.length > 0) {
-        // Группируем и ограничиваем результаты
-        const phones = uniqueResults.filter(r => r.includes('📞')).slice(0, 20); // ОГРАНИЧЕНО
-        const names = uniqueResults.filter(r => r.includes('👤')).slice(0, 10); // ОГРАНИЧЕНО
-        const emails = uniqueResults.filter(r => r.includes('📧')).slice(0, 10); // ОГРАНИЧЕНО
-        
         let html = `<div class="result" style="background: #e8f5e8;">
             ✅ ПОИСК ЗАВЕРШЕН<br>
             🔍 Запрос: "${query}"<br>
@@ -358,35 +377,13 @@ function displaySmartResults(results, query, foundInFiles, errors, resultsDiv) {
             ❌ Ошибок: ${errors}
         </div>`;
         
-        // Показываем только если есть результаты
-        if (phones.length > 0) {
-            html += `<div class="result" style="background: #d1ecf1;">
-                <strong>📞 ТЕЛЕФОНЫ (${phones.length} из ${uniqueResults.filter(r => r.includes('📞')).length}):</strong>
-            </div>`;
-            phones.forEach(result => {
-                html += `<div class="result">${result}</div>`;
-            });
-            if (uniqueResults.filter(r => r.includes('📞')).length > 20) {
-                html += `<div class="result">... и еще ${uniqueResults.filter(r => r.includes('📞')).length - 20} телефонов</div>`;
-            }
-        }
+        // Показываем все результаты вместе (не группируем)
+        uniqueResults.slice(0, 50).forEach(result => {
+            html += `<div class="result">${result}</div>`;
+        });
         
-        if (names.length > 0) {
-            html += `<div class="result" style="background: #d4edda;">
-                <strong>👤 ИМЕНА (${names.length}):</strong>
-            </div>`;
-            names.forEach(result => {
-                html += `<div class="result">${result}</div>`;
-            });
-        }
-        
-        if (emails.length > 0) {
-            html += `<div class="result" style="background: #e2e3e5;">
-                <strong>📧 EMAILS (${emails.length}):</strong>
-            </div>`;
-            emails.forEach(result => {
-                html += `<div class="result">${result}</div>`;
-            });
+        if (uniqueResults.length > 50) {
+            html += `<div class="result">... и еще ${uniqueResults.length - 50} результатов</div>`;
         }
         
         resultsDiv.innerHTML = html;
